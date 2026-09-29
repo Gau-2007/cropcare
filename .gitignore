@@ -220,4 +220,4 @@ __marimo__/
 dataset/
 data/
 venv/
-   *.h5
+*.h5
