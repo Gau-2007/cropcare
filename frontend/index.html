@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CropCare</title>
+</head>
+<body>
+  <h1>CropCare: Crop Disease Prediction</h1>
+
+  <input type="file" id="imageInput" accept="image/*">
+  <br><br>
+  <img id="preview" width="250" style="display:none">
+  <br>
+  <button id="predictBtn">Predict</button>
+
+  <h3 id="status"></h3>
+  <pre id="result"></pre>
+
+  <script>
+    const input = document.getElementById("imageInput");
+    const preview = document.getElementById("preview");
+    const status = document.getElementById("status");
+    const result = document.getElementById("result");
+
+    input.addEventListener("change", () => {
+      const file = input.files[0];
+      if (file) {
+        preview.src = URL.createObjectURL(file);
+        preview.style.display = "block";
+      }
+    });
+
+    document.getElementById("predictBtn").addEventListener("click", async () => {
+      if (!input.files[0]) {
+        status.textContent = "Please choose an image first";
+        return;
+      }
+      status.textContent = "Predicting...";
+      const formData = new FormData();
+      formData.append("image", input.files[0]);
+
+      const response = await fetch("/predict", { method: "POST", body: formData });
+      const data = await response.json();
+
+      status.textContent = data.success ? "Done" : "Error: " + data.error;
+      result.textContent = JSON.stringify(data, null, 2);
+    });
+  </script>
+</body>
+</html>

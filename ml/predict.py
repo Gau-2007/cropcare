@@ -1,10 +1,12 @@
 import json
+from pathlib import Path
 import numpy as np
 import tensorflow as tf
 from PIL import Image
 
-model = tf.keras.models.load_model("ml/model/cropcare_model.keras")
-class_names = json.load(open("ml/model/class_names.json"))
+BASE = Path(__file__).resolve().parent
+model = tf.keras.models.load_model(BASE / "model" / "cropcare_model.keras")
+class_names = json.load(open(BASE / "model" / "class_names.json"))
 
 print("Model loaded")
 print("Number of classes:", len(class_names))
