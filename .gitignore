@@ -221,3 +221,7 @@ dataset/
 data/
 venv/
 *.h5
+
+uploads/*
+!uploads/.gitkeep
+*.db

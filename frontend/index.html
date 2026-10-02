@@ -1,51 +1,166 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CropCare</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CropCare</title>
+<style>
+  :root { --green:#2e7d32; --bg:#f1f8e9; --card:#ffffff; --text:#1b1b1b; --muted:#666; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Arial, sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--green); color:#fff; padding:16px; text-align:center; }
+  header h1 { margin:0; font-size:1.4rem; }
+  header p { margin:4px 0 0; font-size:.9rem; opacity:.9; }
+  main { max-width:720px; margin:0 auto; padding:12px; }
+  .card { background:var(--card); border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 1px 4px rgba(0,0,0,.12); }
+  .card h3 { margin:0 0 8px; color:var(--green); }
+  button { background:var(--green); color:#fff; border:0; border-radius:8px; padding:12px 20px; font-size:1rem; width:100%; }
+  button:disabled { opacity:.6; }
+  input[type=file] { width:100%; margin-bottom:10px; }
+  #preview { max-width:100%; max-height:260px; border-radius:8px; display:none; margin:8px auto; }
+  .bar { background:#e0e0e0; border-radius:8px; height:16px; overflow:hidden; }
+  .bar > div { height:100%; }
+  .warn { background:#fff3cd; border-left:4px solid #f0ad00; padding:10px; border-radius:6px; margin-bottom:12px; }
+  .err { background:#fdecea; border-left:4px solid #d32f2f; padding:10px; border-radius:6px; }
+  .badge { display:inline-block; padding:4px 12px; border-radius:12px; color:#fff; font-weight:bold; }
+  .risk-high { background:#d32f2f; } .risk-medium { background:#f57c00; }
+  .risk-low { background:#388e3c; } .risk-none { background:#388e3c; } .risk-unknown { background:#757575; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  th, td { text-align:left; padding:6px; border-bottom:1px solid #eee; }
+  .small { color:var(--muted); font-size:.85rem; }
+  .top3 div { margin-bottom:8px; }
+</style>
 </head>
 <body>
-  <h1>CropCare: Crop Disease Prediction</h1>
+<header>
+  <h1>CropCare</h1>
+  <p>Upload a tomato or potato leaf. Get the disease, the spread risk and what to do.</p>
+</header>
 
-  <input type="file" id="imageInput" accept="image/*">
-  <br><br>
-  <img id="preview" width="250" style="display:none">
-  <br>
-  <button id="predictBtn">Predict</button>
+<main>
+  <div class="card">
+    <h3>1. Upload a leaf photo</h3>
+    <input type="file" id="imageInput" accept="image/*">
+    <img id="preview" alt="preview">
+    <button id="predictBtn">Predict</button>
+    <p id="status" class="small"></p>
+  </div>
 
-  <h3 id="status"></h3>
-  <pre id="result"></pre>
+  <div id="result"></div>
 
-  <script>
-    const input = document.getElementById("imageInput");
-    const preview = document.getElementById("preview");
-    const status = document.getElementById("status");
-    const result = document.getElementById("result");
+  <div class="card">
+    <h3>Recent predictions</h3>
+    <div id="history" class="small">No predictions yet.</div>
+  </div>
 
-    input.addEventListener("change", () => {
-      const file = input.files[0];
-      if (file) {
-        preview.src = URL.createObjectURL(file);
-        preview.style.display = "block";
+  <p class="small">CropCare gives possible diseases and basic guidance. Please consult an agriculture expert to confirm before using any pesticide.</p>
+</main>
+
+<script>
+  const input = document.getElementById("imageInput");
+  const preview = document.getElementById("preview");
+  const btn = document.getElementById("predictBtn");
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+  let lat = null, lon = null;
+
+  // ask for location once (optional; the server uses a default if refused)
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      p => { lat = p.coords.latitude; lon = p.coords.longitude; },
+      () => {}, { timeout: 5000 });
+  }
+
+  input.addEventListener("change", () => {
+    const f = input.files[0];
+    if (f) { preview.src = URL.createObjectURL(f); preview.style.display = "block"; }
+  });
+
+  btn.addEventListener("click", async () => {
+    if (!input.files[0]) { statusEl.textContent = "Please choose an image first."; return; }
+    btn.disabled = true;
+    statusEl.textContent = "Analysing the leaf... (the weather is checked too)";
+    resultEl.innerHTML = "";
+
+    const fd = new FormData();
+    fd.append("image", input.files[0]);
+    if (lat !== null) { fd.append("lat", lat); fd.append("lon", lon); }
+
+    try {
+      const res = await fetch("/predict", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!data.success) {
+        resultEl.innerHTML = `<div class="err">${data.error}</div>`;
+        statusEl.textContent = "";
+      } else {
+        render(data);
+        statusEl.textContent = "Done";
+        loadHistory();
       }
-    });
+    } catch (e) {
+      resultEl.innerHTML = `<div class="err">Could not reach the server. Is it running?</div>`;
+      statusEl.textContent = "";
+    }
+    btn.disabled = false;
+  });
 
-    document.getElementById("predictBtn").addEventListener("click", async () => {
-      if (!input.files[0]) {
-        status.textContent = "Please choose an image first";
-        return;
-      }
-      status.textContent = "Predicting...";
-      const formData = new FormData();
-      formData.append("image", input.files[0]);
+  function barColor(c) { return c >= 80 ? "#388e3c" : c >= 60 ? "#f57c00" : "#d32f2f"; }
 
-      const response = await fetch("/predict", { method: "POST", body: formData });
-      const data = await response.json();
+  function render(d) {
+    let html = "";
+    if (d.low_confidence) {
+      html += `<div class="warn"><b>Not very sure.</b> The model's confidence is low.
+        Please upload a clearer, closer photo of one leaf, and check the other possibilities below.</div>`;
+    }
 
-      status.textContent = data.success ? "Done" : "Error: " + data.error;
-      result.textContent = JSON.stringify(data, null, 2);
-    });
-  </script>
+    html += `<div class="card">
+      <h3>${d.display_name}</h3>
+      <div class="small">Confidence: ${d.confidence}%</div>
+      <div class="bar"><div style="width:${d.confidence}%;background:${barColor(d.confidence)}"></div></div>
+    </div>`;
+
+    html += `<div class="card"><h3>Other possibilities</h3><div class="top3">` +
+      d.top3.map(t => `<div>${t.display_name} - ${t.confidence}%
+        <div class="bar"><div style="width:${t.confidence}%;background:#90a4ae"></div></div></div>`).join("") +
+      `</div></div>`;
+
+    if (!d.is_healthy) {
+      html += `<div class="card"><h3>Spread risk (next 3 days)</h3>
+        <span class="badge risk-${d.risk.level.toLowerCase()}">${d.risk.level}</span>
+        <p>${d.risk.reason}</p></div>`;
+    }
+
+    html += `<div class="card"><h3>Recommended action</h3>
+      <p><b>About:</b> ${d.info.description}</p>
+      <p><b>Symptoms:</b> ${d.info.symptoms}</p>
+      <p><b>Prevention:</b> ${d.info.prevention}</p>
+      <p><b>Treatment:</b> ${d.info.treatment}</p></div>`;
+
+    html += `<div class="card"><h3>Water advice</h3><p>${d.water}</p></div>`;
+
+    if (d.weather) {
+      html += `<div class="card"><h3>Weather forecast</h3><table>
+        <tr><th>Date</th><th>Temp</th><th>Humidity</th><th>Rain</th></tr>` +
+        d.weather.map(w => `<tr><td>${w.date}</td><td>${w.tmin}-${w.tmax} C</td>
+          <td>${w.humidity ?? "-"}%</td><td>${w.rain} mm</td></tr>`).join("") +
+        `</table></div>`;
+    } else {
+      html += `<div class="card"><h3>Weather forecast</h3><p class="small">Not available right now.</p></div>`;
+    }
+    resultEl.innerHTML = html;
+  }
+
+  async function loadHistory() {
+    try {
+      const rows = await (await fetch("/history")).json();
+      document.getElementById("history").innerHTML = rows.length
+        ? "<table><tr><th>Disease</th><th>Confidence</th><th>When</th></tr>" +
+          rows.map(r => `<tr><td>${r.display_name || r.predicted_class}</td>
+            <td>${r.confidence}%</td><td>${r.created_at}</td></tr>`).join("") + "</table>"
+        : "No predictions yet.";
+    } catch (e) {}
+  }
+  loadHistory();
+</script>
 </body>
 </html>
